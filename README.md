@@ -103,7 +103,7 @@ The project trains and evaluates several regression models:
 
 ## Results
 
-The model performance is evaluated using metrics such as RMSE, MAE, and R². Visualizations are generated to analyze the data and model results.
+The model performance is evaluated using metrics such as RMSE, MAE, and R². Visualizations are generated to analyse the data and model results.
 
 ## License
 
