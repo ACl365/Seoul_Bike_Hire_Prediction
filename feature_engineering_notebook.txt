@@ -1,0 +1,602 @@
+{
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# Seoul Bike Rental Feature Engineering\n",
+    "\n",
+    "This notebook focuses on creating engineered features to enhance the predictive power of our models. We'll transform raw data into features that better represent the underlying patterns in Seoul bike rental demand."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Import required libraries\n",
+    "import numpy as np\n",
+    "import pandas as pd\n",
+    "import matplotlib.pyplot as plt\n",
+    "import seaborn as sns\n",
+    "import os\n",
+    "from pathlib import Path\n",
+    "from sklearn.preprocessing import StandardScaler\n",
+    "import joblib\n",
+    "\n",
+    "# Set plotting style\n",
+    "plt.style.use('seaborn-v0_8-whitegrid')\n",
+    "plt.rcParams['figure.figsize'] = (12, 8)\n",
+    "sns.set_palette('viridis')\n",
+    "\n",
+    "# Disable warnings\n",
+    "import warnings\n",
+    "warnings.filterwarnings('ignore')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Define project paths\n",
+    "project_dir = Path().resolve().parents[0]\n",
+    "data_dir = os.path.join(project_dir, 'data')\n",
+    "raw_data_dir = os.path.join(data_dir, 'raw')\n",
+    "processed_data_dir = os.path.join(data_dir, 'processed')\n",
+    "\n",
+    "# Ensure directories exist\n",
+    "os.makedirs(processed_data_dir, exist_ok=True)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 1. Loading the Data"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Load the data from the exploration stage\n",
+    "data_file = os.path.join(processed_data_dir, 'seoul_bike_explored.csv')\n",
+    "\n",
+    "# If the file doesn't exist, load the raw data\n",
+    "if not os.path.exists(data_file):\n",
+    "    data_file = os.path.join(raw_data_dir, 'SeoulBikeData.csv')\n",
+    "    df = pd.read_csv(data_file, encoding='unicode_escape')\n",
+    "    \n",
+    "    # Basic preprocessing if loading from raw\n",
+    "    df['Date'] = pd.to_datetime(df['Date'], format='%d/%m/%Y')\n",
+    "    df['Year'] = df['Date'].dt.year\n",
+    "    df['Month'] = df['Date'].dt.month\n",
+    "    df['Day'] = df['Date'].dt.day\n",
+    "    df['Day_of_Week'] = df['Date'].dt.day_name()\n",
+    "    df['Is_Weekend'] = df['Date'].dt.dayofweek >= 5\n",
+    "else:\n",
+    "    df = pd.read_csv(data_file)\n",
+    "    df['Date'] = pd.to_datetime(df['Date'])\n",
+    "\n",
+    "print(f\"Dataset shape: {df.shape}\")\n",
+    "df.head()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 2. Temporal Feature Engineering"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Create cyclical features for time variables to capture periodicity\n",
+    "df['Hour_sin'] = np.sin(2 * np.pi * df['Hour']/24)\n",
+    "df['Hour_cos'] = np.cos(2 * np.pi * df['Hour']/24)\n",
+    "df['Month_sin'] = np.sin(2 * np.pi * df['Month']/12)\n",
+    "df['Month_cos'] = np.cos(2 * np.pi * df['Month']/12)\n",
+    "df['Day_sin'] = np.sin(2 * np.pi * df['Day']/31)\n",
+    "df['Day_cos'] = np.cos(2 * np.pi * df['Day']/31)\n",
+    "\n",
+    "# Add day of year and week of year features\n",
+    "df['Day_of_Year'] = df['Date'].dt.dayofyear\n",
+    "df['Week_of_Year'] = df['Date'].dt.isocalendar().week\n",
+    "\n",
+    "# Create day of week cyclical features\n",
+    "df['Day_of_Week_num'] = df['Date'].dt.dayofweek\n",
+    "df['Day_of_Week_sin'] = np.sin(2 * np.pi * df['Day_of_Week_num']/7)\n",
+    "df['Day_of_Week_cos'] = np.cos(2 * np.pi * df['Day_of_Week_num']/7)\n",
+    "\n",
+    "# Create features for special times of day\n",
+    "df['Is_Morning_Rush'] = ((df['Hour'] >= 7) & (df['Hour'] <= 9)).astype(int)\n",
+    "df['Is_Evening_Rush'] = ((df['Hour'] >= 17) & (df['Hour'] <= 19)).astype(int)\n",
+    "df['Is_Night'] = ((df['Hour'] >= 22) | (df['Hour'] <= 5)).astype(int)\n",
+    "df['Is_Working_Hour'] = ((df['Hour'] >= 9) & (df['Hour'] <= 17)).astype(int)\n",
+    "\n",
+    "# Display new temporal features\n",
+    "temporal_features = ['Hour_sin', 'Hour_cos', 'Month_sin', 'Month_cos', 'Day_sin', 'Day_cos', \n",
+    "                     'Day_of_Week_sin', 'Day_of_Week_cos', 'Is_Morning_Rush', 'Is_Evening_Rush']\n",
+    "df[temporal_features].head()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Visualizing Cyclical Encoding"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Visualize cyclical encoding of hours\n",
+    "plt.figure(figsize=(12, 6))\n",
+    "\n",
+    "plt.subplot(1, 2, 1)\n",
+    "plt.scatter(df['Hour'], df['Hour_sin'], alpha=0.5)\n",
+    "plt.title('Hour -> sin(Hour)')\n",
+    "plt.xlabel('Hour')\n",
+    "plt.ylabel('sin(Hour)')\n",
+    "plt.grid(True)\n",
+    "\n",
+    "plt.subplot(1, 2, 2)\n",
+    "plt.scatter(df['Hour'], df['Hour_cos'], alpha=0.5)\n",
+    "plt.title('Hour -> cos(Hour)')\n",
+    "plt.xlabel('Hour')\n",
+    "plt.ylabel('cos(Hour)')\n",
+    "plt.grid(True)\n",
+    "\n",
+    "plt.tight_layout()\n",
+    "plt.show()\n",
+    "\n",
+    "# Visualize the full cycle using both sin and cos\n",
+    "hours = np.arange(24)\n",
+    "hour_sin = np.sin(2 * np.pi * hours/24)\n",
+    "hour_cos = np.cos(2 * np.pi * hours/24)\n",
+    "\n",
+    "plt.figure(figsize=(10, 8))\n",
+    "plt.scatter(hour_sin, hour_cos, c=hours, cmap='viridis')\n",
+    "for i, hour in enumerate(hours):\n",
+    "    plt.annotate(str(hour), (hour_sin[i], hour_cos[i]), xytext=(5, 5), textcoords='offset points')\n",
+    "plt.title('Cyclical Encoding of Hours (sin vs cos)')\n",
+    "plt.xlabel('sin(Hour)')\n",
+    "plt.ylabel('cos(Hour)')\n",
+    "plt.grid(True)\n",
+    "plt.colorbar(label='Hour')\n",
+    "plt.axis('equal')\n",
+    "plt.show()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 3. Weather Feature Engineering"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Create weather interaction features\n",
+    "# Temperature and humidity interaction (heat index proxy)\n",
+    "if all(col in df.columns for col in ['Temperature(°C)', 'Humidity(%)']):\n",
+    "    df['Temp_Humidity_Interaction'] = df['Temperature(°C)'] * df['Humidity(%)']\n",
+    "\n",
+    "# Create feels-like temperature (simplified version)\n",
+    "if all(col in df.columns for col in ['Temperature(°C)', 'Wind speed (m/s)', 'Humidity(%)']):\n",
+    "    # Simple approximation of feels-like temperature considering wind chill and humidity\n",
+    "    df['Feels_Like_Temp'] = df['Temperature(°C)'] - (\n",
+    "        0.3 * df['Wind speed (m/s)'] + \n",
+    "        0.1 * (df['Humidity(%)'] - 65) * np.where(df['Temperature(°C)'] > 20, 1, 0)\n",
+    "    )\n",
+    "\n",
+    "# Weather severity index\n",
+    "if all(col in df.columns for col in ['Rainfall(mm)', 'Snowfall (cm)']):\n",
+    "    df['Weather_Severity'] = df['Rainfall(mm)'] + (5 * df['Snowfall (cm)'])\n",
+    "\n",
+    "# Weather categories\n",
+    "if 'Rainfall(mm)' in df.columns:\n",
+    "    df['Is_Rainy'] = (df['Rainfall(mm)'] > 0).astype(int)\n",
+    "if 'Snowfall (cm)' in df.columns:\n",
+    "    df['Is_Snowy'] = (df['Snowfall (cm)'] > 0).astype(int)\n",
+    "\n",
+    "# Temperature bins for categorical analysis\n",
+    "if 'Temperature(°C)' in df.columns:\n",
+    "    df['Temp_Category'] = pd.cut(\n",
+    "        df['Temperature(°C)'], \n",
+    "        bins=[-20, 0, 10, 20, 30, 40], \n",
+    "        labels=['Very Cold', 'Cold', 'Mild', 'Warm', 'Hot']\n",
+    "    )\n",
+    "    \n",
+    "# Visibility categories\n",
+    "if 'Visibility (10m)' in df.columns:\n",
+    "    df['Visibility_Category'] = pd.cut(\n",
+    "        df['Visibility (10m)'], \n",
+    "        bins=[0, 500, 1000, 2000, float('inf')], \n",
+    "        labels=['Very Low', 'Low', 'Moderate', 'Good']\n",
+    "    )\n",
+    "    \n",
+    "# Display new weather features\n",
+    "weather_features = [col for col in ['Temp_Humidity_Interaction', 'Feels_Like_Temp', \n",
+    "                                   'Weather_Severity', 'Is_Rainy', 'Is_Snowy'] \n",
+    "                   if col in df.columns]\n",
+    "df[weather_features].head()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Visualizing Weather Features"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Visualize temperature vs feels-like temperature\n",
+    "if 'Feels_Like_Temp' in df.columns and 'Temperature(°C)' in df.columns:\n",
+    "    plt.figure(figsize=(10, 6))\n",
+    "    plt.scatter(df['Temperature(°C)'], df['Feels_Like_Temp'], \n",
+    "                alpha=0.5, c=df['Wind speed (m/s)'] if 'Wind speed (m/s)' in df.columns else 'blue')\n",
+    "    plt.plot([df['Temperature(°C)'].min(), df['Temperature(°C)'].max()], \n",
+    "             [df['Temperature(°C)'].min(), df['Temperature(°C)'].max()], 'r--')\n",
+    "    plt.colorbar(label='Wind Speed (m/s)')\n",
+    "    plt.title('Actual Temperature vs Feels-Like Temperature')\n",
+    "    plt.xlabel('Actual Temperature (°C)')\n",
+    "    plt.ylabel('Feels-Like Temperature (°C)')\n",
+    "    plt.grid(True)\n",
+    "    plt.show()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Examine impact of weather features on bike rentals\n",
+    "if 'Weather_Severity' in df.columns:\n",
+    "    plt.figure(figsize=(10, 6))\n",
+    "    plt.scatter(df['Weather_Severity'], df['Rented Bike Count'], alpha=0.3)\n",
+    "    plt.title('Weather Severity vs Bike Rentals')\n",
+    "    plt.xlabel('Weather Severity Index')\n",
+    "    plt.ylabel('Rented Bike Count')\n",
+    "    plt.grid(True)\n",
+    "    plt.show()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 4. Interaction Features"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Create interaction between hour and weekday/weekend\n",
+    "if 'Is_Weekend' in df.columns and 'Hour' in df.columns:\n",
+    "    df['Hour_Weekend_Interaction'] = df['Hour'] * df['Is_Weekend']\n",
+    "    \n",
+    "# Create interaction between hour and temperature\n",
+    "if 'Hour' in df.columns and 'Temperature(°C)' in df.columns:\n",
+    "    df['Hour_Temp_Interaction'] = df['Hour'] * df['Temperature(°C)']\n",
+    "    \n",
+    "# Create interaction between hour and weather features\n",
+    "if 'Hour' in df.columns:\n",
+    "    if 'Is_Rainy' in df.columns:\n",
+    "        df['Hour_Rain_Interaction'] = df['Hour'] * df['Is_Rainy']\n",
+    "    if 'Weather_Severity' in df.columns:\n",
+    "        df['Hour_Weather_Severity'] = df['Hour'] * df['Weather_Severity']\n",
+    "        \n",
+    "# Create interaction between season and temperature\n",
+    "if 'Seasons' in df.columns and 'Temperature(°C)' in df.columns:\n",
+    "    # Create dummy variables for seasons\n",
+    "    seasons_dummies = pd.get_dummies(df['Seasons'], prefix='Season')\n",
+    "    # Create interactions with temperature\n",
+    "    for season in seasons_dummies.columns:\n",
+    "        df[f'{season}_Temp_Interaction'] = seasons_dummies[season] * df['Temperature(°C)']\n",
+    "        \n",
+    "# Display new interaction features\n",
+    "interaction_features = [col for col in df.columns if 'Interaction' in col]\n",
+    "df[interaction_features].head()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Visualizing Interaction Effects"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Visualize hour-weekend interaction effect\n",
+    "if 'Is_Weekend' in df.columns:\n",
+    "    # Group by hour and weekend status\n",
+    "    hour_weekend_group = df.groupby(['Hour', 'Is_Weekend'])['Rented Bike Count'].mean().reset_index()\n",
+    "    hour_weekend_group['Day Type'] = hour_weekend_group['Is_Weekend'].map({0: 'Weekday', 1: 'Weekend'})\n",
+    "    \n",
+    "    plt.figure(figsize=(12, 6))\n",
+    "    sns.lineplot(x='Hour', y='Rented Bike Count', hue='Day Type', \n",
+    "                data=hour_weekend_group, marker='o', linewidth=2)\n",
+    "    plt.title('Average Bike Rentals by Hour and Day Type')\n",
+    "    plt.xlabel('Hour of Day')\n",
+    "    plt.ylabel('Average Rented Bikes')\n",
+    "    plt.xticks(range(0, 24))\n",
+    "    plt.grid(True, linestyle='--', alpha=0.7)\n",
+    "    plt.show()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Visualize hour-temperature interaction\n",
+    "if 'Temperature(°C)' in df.columns:\n",
+    "    # Create temperature bins for visualization\n",
+    "    temp_bins = pd.cut(df['Temperature(°C)'], bins=4)\n",
+    "    # Group by hour and temperature bins\n",
+    "    hour_temp_group = df.groupby(['Hour', temp_bins])['Rented Bike Count'].mean().reset_index()\n",
+    "    \n",
+    "    plt.figure(figsize=(12, 6))\n",
+    "    sns.lineplot(x='Hour', y='Rented Bike Count', hue='Temperature(°C)', \n",
+    "                data=hour_temp_group, marker='o', linewidth=2)\n",
+    "    plt.title('Average Bike Rentals by Hour and Temperature Range')\n",
+    "    plt.xlabel('Hour of Day')\n",
+    "    plt.ylabel('Average Rented Bikes')\n",
+    "    plt.xticks(range(0, 24))\n",
+    "    plt.grid(True, linestyle='--', alpha=0.7)\n",
+    "    plt.show()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 5. One-Hot Encoding Categorical Variables"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# One-hot encode categorical features\n",
+    "categorical_cols = ['Seasons', 'Holiday', 'Functioning Day', 'Day_of_Week', 'Temp_Category', 'Visibility_Category']\n",
+    "categorical_cols = [col for col in categorical_cols if col in df.columns]\n",
+    "\n",
+    "# Create a copy for encoding\n",
+    "df_encoded = df.copy()\n",
+    "\n",
+    "# Apply one-hot encoding\n",
+    "for col in categorical_cols:\n",
+    "    df_encoded = pd.get_dummies(df_encoded, columns=[col], prefix=col)\n",
+    "    \n",
+    "# Check the resulting columns\n",
+    "print(f\"Original dataframe shape: {df.shape}\")\n",
+    "print(f\"Encoded dataframe shape: {df_encoded.shape}\")\n",
+    "\n",
+    "# Display the first few rows with some of the encoded columns\n",
+    "encoded_cols = [col for col in df_encoded.columns if any(prefix in col for prefix in \n",
+    "                                                         ['Seasons_', 'Holiday_', 'Functioning Day_'])]\n",
+    "df_encoded[encoded_cols[:10]].head()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 6. Feature Scaling"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Define numerical features to scale\n",
+    "numerical_features = [\n",
+    "    'Temperature(°C)', 'Humidity(%)', 'Wind speed (m/s)', 'Visibility (10m)',\n",
+    "    'Dew point temperature(°C)', 'Solar Radiation (MJ/m2)', 'Rainfall(mm)', 'Snowfall (cm)'\n",
+    "]\n",
+    "numerical_features = [col for col in numerical_features if col in df_encoded.columns]\n",
+    "\n",
+    "# Create a copy for scaling\n",
+    "df_scaled = df_encoded.copy()\n",
+    "\n",
+    "# Initialize the scaler\n",
+    "scaler = StandardScaler()\n",
+    "\n",
+    "# Scale numerical features\n",
+    "df_scaled[numerical_features] = scaler.fit_transform(df_scaled[numerical_features])\n",
+    "\n",
+    "# Display the scaled features\n",
+    "df_scaled[numerical_features].describe()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 7. Feature Correlation Analysis"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Analyze correlation between engineered features and bike rentals\n",
+    "target = 'Rented Bike Count'\n",
+    "\n",
+    "# Select numerical features including engineered ones\n",
+    "all_numerical_features = df_scaled.select_dtypes(include=['float64', 'int64']).columns.tolist()\n",
+    "all_numerical_features = [col for col in all_numerical_features if col != target]\n",
+    "\n",
+    "# Calculate correlations with target\n",
+    "correlations = {}\n",
+    "for feature in all_numerical_features:\n",
+    "    correlations[feature] = df_scaled[feature].corr(df_scaled[target])\n",
+    "    \n",
+    "# Convert to DataFrame and sort\n",
+    "corr_df = pd.DataFrame({'Feature': correlations.keys(), 'Correlation': correlations.values()})\n",
+    "corr_df = corr_df.sort_values('Correlation', ascending=False)\n",
+    "\n",
+    "# Display top positive and negative correlations\n",
+    "plt.figure(figsize=(14, 10))\n",
+    "\n",
+    "plt.subplot(1, 2, 1)\n",
+    "top_positive = corr_df.head(15)\n",
+    "sns.barplot(y='Feature', x='Correlation', data=top_positive, palette='viridis')\n",
+    "plt.title('Top 15 Positive Correlations')\n",
+    "plt.xlabel('Correlation with Bike Rentals')\n",
+    "plt.grid(axis='x', linestyle='--', alpha=0.7)\n",
+    "\n",
+    "plt.subplot(1, 2, 2)\n",
+    "top_negative = corr_df.tail(15).sort_values('Correlation')\n",
+    "sns.barplot(y='Feature', x='Correlation', data=top_negative, palette='viridis')\n",
+    "plt.title('Top 15 Negative Correlations')\n",
+    "plt.xlabel('Correlation with Bike Rentals')\n",
+    "plt.grid(axis='x', linestyle='--', alpha=0.7)\n",
+    "\n",
+    "plt.tight_layout()\n",
+    "plt.show()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 8. Multicollinearity Analysis"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Calculate correlation matrix for all numerical features\n",
+    "correlation_matrix = df_scaled[all_numerical_features].corr()\n",
+    "\n",
+    "# Visualize the correlation matrix\n",
+    "plt.figure(figsize=(16, 14))\n",
+    "mask = np.triu(np.ones_like(correlation_matrix, dtype=bool))\n",
+    "sns.heatmap(correlation_matrix, mask=mask, cmap='coolwarm', annot=False, linewidths=0.5, linecolor='black')\n",
+    "plt.title('Correlation Matrix of Numerical Features')\n",
+    "plt.tight_layout()\n",
+    "plt.show()\n",
+    "\n",
+    "# Identify highly correlated feature pairs\n",
+    "threshold = 0.8\n",
+    "high_corr_pairs = []\n",
+    "\n",
+    "for i in range(len(correlation_matrix.columns)):\n",
+    "    for j in range(i):\n",
+    "        if abs(correlation_matrix.iloc[i, j]) > threshold:\n",
+    "            high_corr_pairs.append((\n",
+    "                correlation_matrix.columns[i],\n",
+    "                correlation_matrix.columns[j],\n",
+    "                correlation_matrix.iloc[i, j]\n",
+    "            ))\n",
+    "            \n",
+    "# Display high correlation pairs\n",
+    "high_corr_df = pd.DataFrame(high_corr_pairs, columns=['Feature 1', 'Feature 2', 'Correlation'])\n",
+    "high_corr_df = high_corr_df.sort_values('Correlation', ascending=False)\n",
+    "print(f\"Found {len(high_corr_df)} feature pairs with correlation > {threshold}\")\n",
+    "high_corr_df.head(10)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 9. Final Dataset Preparation"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Save the processed dataset\n",
+    "output_file = os.path.join(processed_data_dir, 'seoul_bike_processed.csv')\n",
+    "df_scaled.to_csv(output_file, index=False)\n",
+    "print(f\"Processed dataset saved to {output_file}\")\n",
+    "\n",
+    "# Save the scaler for later use in predictions\n",
+    "scaler_file = os.path.join(processed_data_dir, 'scaler.pkl')\n",
+    "joblib.dump(scaler, scaler_file)\n",
+    "print(f\"Scaler saved to {scaler_file}\")"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 10. Feature Engineering Summary"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "In this notebook, we've performed comprehensive feature engineering for the Seoul bike rental dataset:\n",
+    "\n",
+    "1. **Temporal Features**:\n",
+    "   - Created cyclical encodings for hour, day, month, and day of week\n",
+    "   - Added special time indicators (morning/evening rush, night, working hours)\n",
+    "   - Incorporated day of year and week of year features\n",
+    "\n",
+    "2. **Weather Features**:\n",
+    "   - Created a feels-like temperature metric combining temperature, wind, and humidity\n",
+    "   - Developed a weather severity index\n",
+    "   - Added binary indicators for rainy and snowy conditions\n",
+    "   - Created categorical bins for temperature and visibility\n",
+    "\n",
+    "3. **Interaction Features**:\n",
+    "   - Modeled interactions between hour and weather conditions\n",
+    "   - Created weekend-specific hourly patterns\n",
+    "   - Developed season-temperature interactions\n",
+    "\n",
+    "4. **Categorical Encoding**:\n",
+    "   - One-hot encoded all categorical variables including seasons, holidays, and days of week\n",
+    "\n",
+    "5. **Feature Scaling**:\n",
+    "   - Standardized all numerical features\n",
+    "\n",
+    "6. **Correlation Analysis
