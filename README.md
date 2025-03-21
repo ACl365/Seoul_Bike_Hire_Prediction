@@ -13,12 +13,12 @@ Seoul_Bikes/
 │   └── processed/       # Processed data ready for modeling
 ├── models/              # Trained models
 ├── reports/
-│   └── figures/         # Generated visualizations
+│   └── figures/         # Generated visualisations
 └── src/                 # Source code
     ├── data/            # Data processing scripts
     ├── features/        # Feature engineering scripts
     ├── models/          # Model training and evaluation scripts
-    └── visualization/   # Visualization scripts
+    └── visualization/   # Visualisation scripts
 ```
 
 ## Getting Started
